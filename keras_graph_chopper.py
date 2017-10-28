@@ -2,6 +2,7 @@
 
 from __future__ import print_function
 
+import sys
 import argparse
 from keras.layers import Input
 from keras.models import Model
@@ -37,8 +38,10 @@ def copy_layer(l):
     return newl
 
 
-def fragment_copy(start, n):
+def fragment_copy(start, n, outputs, new_outputs):
     global verbose
+
+    copied_frags = []
 
     outs = [n]
     t = start
@@ -59,24 +62,29 @@ def fragment_copy(start, n):
             print("copy layer: ", n.name)
         end = copy_layer(n)
         t = end(t)
-        try:
-            end.set_weights(n.get_weights())
-        except Exception as e:
-            print(e)
-            return start, end
+        end.set_weights(n.get_weights())
+        if n in outputs:
+            new_outputs.append(end)
         outs = outbound_layer(n)
 
-    return start, end, n
+    if len(outs) > 1:
+        for out in outs:
+            newfs = fragment_copy(t, out, outputs, new_outputs)
+            copied_frags.extend(newfs)
+    else:
+        if len(outs) != 0:
+            copied_frags.append(Fragment(end, n))
+
+    return copied_frags
 
 
 class Fragment(object):
-    def __init__(self, begin, end, orig_end):
-        self.begin = begin
+    def __init__(self, end, orig_end):
         self.end = end
         self.orig_end = orig_end
 
     def __str__(self):
-        return "[begin: {}, end: {}, orig: {}]".format(self.begin, self.end, self.orig_end)
+        return "[end: {}, orig: {}]".format(self.end, self.orig_end)
 
 
 def model_chopper(m, input_names, output_names):
@@ -96,8 +104,8 @@ def model_chopper(m, input_names, output_names):
         if isinstance(input, InputLayer):
             input = outbound_layers(input)[0]
         new_input = input_to(input)
-        begin, end, orig = fragment_copy(new_input, input)
-        frags.append(Fragment(begin, end, orig))
+        copied_frags = fragment_copy(new_input, input, outputs, new_outputs)
+        frags.extend(copied_frags)
         new_inputs.append(new_input)
 
     # Now we have graph fragments
@@ -114,37 +122,36 @@ def model_chopper(m, input_names, output_names):
             if verbose:
                 print("Fragment: ", f)
 
-            if f.orig_end in outputs:
-                # If this fragment ends in an output then it is complete
-                new_outputs.append(f.end)
-                clean_frags.append(f)
-            else:
-                # XXX bug - if the output is also a dep we won't find the dep
+            # go through each unmet dep
+            n = outbound_layer(f.orig_end)
 
-                # go through each unmet dep
-                n = outbound_layer(f.orig_end)
-                assert(len(n) == 1)
-                n = n[0]  # n is now the next uncopied node
+            assert(len(n) == 1)
+            n = n[0]  # n is now the next uncopied node
 
-                dep_list = inbound_layers(n)
-                assert(len(dep_list) == 1)
-                dep_list = dep_list[0]
+            dep_list = inbound_layers(n)
+            assert(len(dep_list) == 1)
+            dep_list = dep_list[0]
 
-                # make sure we have answers for each of the deps in the dep_list
-                feed_list = []
-                for dep in dep_list:
-                    ok = False
-                    for fdep in frags:
-                        if fdep.orig_end == dep:
-                            ok = True
-                            # fragment will be clean because we're about to feed
-                            clean_frags.append(fdep)
-                            feed_list.append(fdep.end)
-                    assert(ok)
+            # make sure we have answers for each of the deps in the dep_list
+            feed_list = []
+            for dep in dep_list:
+                ok = False
+                for fdep in frags:
+                    if fdep.orig_end == dep:
+                        ok = True
+                        # fragment will be clean because we're about to feed
+                        clean_frags.append(fdep)
+                        feed_list.append(fdep.end)
+                if not ok:
+                    print("warning: layer %s not satisfied, pruning" % n.name, file=sys.stderr)
+                    clean_frags.append(fdep)
+                    feed_list = []
+                    break
 
-                feed_list = [fl.output for fl in feed_list]
-                start, end, orig = fragment_copy(feed_list, n)
-                new_frags.append(Fragment(start, end, orig))
+            feed_list = [fl.output for fl in feed_list]
+            if len(feed_list) > 0:
+                copied_frags = fragment_copy(feed_list, n, outputs, new_outputs)
+                new_frags.extend(copied_frags)
 
         for f in new_frags:
             frags.append(f)
