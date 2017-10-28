@@ -39,6 +39,7 @@ def copy_layer(l):
 
 
 def fragment_copy(start, n, outputs, new_outputs):
+    '''Copy all paths until we have unmet dependencies'''
     global verbose
 
     copied_frags = []
@@ -146,6 +147,8 @@ def model_chopper(m, input_names, output_names):
                         clean_frags.append(fdep)
                         feed_list.append(fdep.end)
                 if not ok:
+                    # This isn't fatal as long as all of the outputs get satisfied. Maybe this part
+                    # of the graph isn't useful for their output model
                     print("warning: layer %s not satisfied, pruning" % n.name, file=sys.stderr)
                     clean_frags.append(fdep)
                     feed_list = []
@@ -162,6 +165,11 @@ def model_chopper(m, input_names, output_names):
         for f in clean_frags:
             if f in frags:
                 frags.remove(f)
+
+    if len(new_outputs) != len(outputs):
+        raise Exception("only found %d of the %d requested outputs!" % (len(new_outputs), len(outputs)))
+    if len(new_inputs) != len(inputs):
+        raise Exception("only found %d of the %d requested inputs!" % (len(new_inputs), len(inputs)))
 
     new_outputs = [l.output for l in new_outputs]
     return Model(inputs=new_inputs, outputs=new_outputs)
