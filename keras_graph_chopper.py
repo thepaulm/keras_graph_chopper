@@ -51,6 +51,7 @@ def fragment_copy(start, n, outputs, new_outputs):
     if isinstance(t, list):
         expected_ins = len(t)
 
+    # Copy this next section
     while len(outs) == 1 and \
             len(inbound_layers(outs[0])) == 1 and \
             len(inbound_layers(outs[0])[0]) == expected_ins:
@@ -67,10 +68,12 @@ def fragment_copy(start, n, outputs, new_outputs):
             new_outputs.append(end)
         outs = outbound_layer(n)
 
+    # If we are at a branch, do each fork
     if len(outs) > 1:
         for out in outs:
             newfs = fragment_copy(t, out, outputs, new_outputs)
             copied_frags.extend(newfs)
+    # If we are missing deps, remember this fragment
     else:
         if len(outs) != 0:
             copied_frags.append(Fragment(end, n))
