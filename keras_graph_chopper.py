@@ -113,7 +113,9 @@ def model_chopper(m, input_names, output_names):
         new_inputs.append(new_input)
 
     # Now we have graph fragments
-    while len(frags) != 0:
+    added_frags = True
+    while len(frags) != 0 and added_frags:
+        added_frags = False
         clean_frags = []
         new_frags = []
 
@@ -147,10 +149,6 @@ def model_chopper(m, input_names, output_names):
                         clean_frags.append(fdep)
                         feed_list.append(fdep.end)
                 if not ok:
-                    # This isn't fatal as long as all of the outputs get satisfied. Maybe this part
-                    # of the graph isn't useful for their output model
-                    print("warning: layer %s not satisfied, pruning" % n.name, file=sys.stderr)
-                    clean_frags.append(fdep)
                     feed_list = []
                     break
 
@@ -160,11 +158,18 @@ def model_chopper(m, input_names, output_names):
                 new_frags.extend(copied_frags)
 
         for f in new_frags:
+            added_frags = True
             frags.append(f)
 
         for f in clean_frags:
             if f in frags:
                 frags.remove(f)
+
+    # This isn't fatal as long as all of the outputs get satisfied. Maybe this part
+    # of the graph isn't useful for their output model
+    for f in frags:
+        print("warning: layer %s not satisfied, pruning" % outbound_layer(f.orig_end)[0].name,
+              file=sys.stderr)
 
     if len(new_outputs) != len(outputs):
         raise Exception("only found %d of the %d requested outputs!" % (len(new_outputs), len(outputs)))
