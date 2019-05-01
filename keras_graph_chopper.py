@@ -106,7 +106,7 @@ def model_chopper(m, input_names, output_names):
         # If one of these is already InputLayer, then move one up and things
         # will work out.
         if isinstance(input, InputLayer):
-            input = outbound_layers(input)[0]
+            input = outbound_layer(input)[0]
         new_input = input_to(input)
         copied_frags = fragment_copy(new_input, input, outputs, new_outputs)
         frags.extend(copied_frags)
@@ -205,6 +205,7 @@ def main():
     print(sub.inputs)
     print("Outputs: ")
     print(sub.outputs)
+
 
 if __name__ == '__main__':
     main()
